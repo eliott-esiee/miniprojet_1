@@ -1,0 +1,258 @@
+
+---
+title: "<FONT color='#0066CC'><FONT size = 4 ><DIV align= center> AP-4209 ESIEE-Paris: 2023 -2024 </DIV></FONT></FONT>"
+output:
+  html_document:
+    highlight: textmate
+    theme: readable
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+---
+
+
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 17px;}
+code.r{font-size: 5px;}
+
+pre { font-size: 15px;}
+</style>
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+<FONT color='#0066CC'><FONT size = 4 >
+
+::: {align="center"}
+Fouille de données avec R pour la data science et l'intelligence artificielle\
+
+Projet 1 : Classification bayésienne
+:::
+
+
+</FONT></FONT>
+
+<FONT color='#0066CC'><FONT size = 4 >
+
+::: {align="center"}
+Eliott Vigier et Alexandre Wu -- ESIEE Paris\
+:::
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+**Résumé :** Nous développerons un projet de classification bayésienne en utilisant l'ensemble de données sur les émotions (Kaggle) en plusieurs étapes. Nous allons employer une série de pré-traitement plus complexes et éventuellement étendre l'approche bayésienne pour inclure des ajustements (tuning) ou des probabilité supplémentaires.
+
+<br>
+
+**Objectif principal :** Développer un classificateur bayésien pour prédire les émotions à partir de données textuelles.
+
+<br>
+
+**Source des données :** Jeu de données sur les émotions.
+
+* **Lien :** Emotion Dataset (kaggle.com)
+
+<br>
+
+<hr style="border: 1px  solid gray">
+
+### <FONT color='#000033'><FONT size = 3> 1. RAPPELS  </FONT></FONT> 
+
+
+
+<br>
+<hr style="border: 1px  solid gray">
+
+### <FONT color='#000033'><FONT size = 3> 2. PROGRAMMATION </FONT> 
+
+
+Nous allons procéder en deux étapes    
+  
+  - Calcul des tableaux des probabilités conditionnelles puis stockage de ces derniers dans des listes. 
+  - Calcul des probabilités *a posteriori* et affectation par argmax sur un jeu de données test
+  
+  
+Au préalable, nous créons le dataframe contenant le jeu de données (simplissime !) fourni en cours.  
+
+Nous utilisons :   
+
+  * le package [kableExtra](https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html) qui permet de réaliser des "beaux" tableaux au format html ou pdf.   
+  * le package *caret* pour les matrices de confusion    
+  * le paquest *e1071* qui réalise la classification Bayésienne. Les résultats développés dans vos scripts seront comparés à ceux fournis par cette librairie     
+  
+*rmq*: Ne jamais oublier d'effacer  toutes les variables en mémoire au début de votre script (réinitialiser l'environnement)
+
+<br>
+
+##### <FONT color='#000033'><FONT size = 3> 2.1 Chargement et exploration des données </FONT></FONT>
+
+<br>
+
+###### <FONT color='#000033'><FONT size =3> 2.1.1 Chargez le jeu de données dans R </FONT> </FONT> 
+
+On commence à charger les librairies nécessaires pour le projet :
+```{r}
+library(kableExtra)
+library(dplyr)
+library(tm)
+library(knitr)
+
+library(tokenizers)
+library(text2vec)
+
+library(ggplot2)
+```
+
+Ensuite on charge le dataset :
+
+```{r, echo = T}
+df <- read.csv("Emotion_classify_Data.csv")
+```
+```{r}
+save(data, file = "Emotion_classify_Data.Rda")
+```
+
+```{r,echo = T,  warning = F}
+load("Emotion_classify_Data.Rda")
+```
+Affichage du tableau avec *kableExtra*
+
+```{r, echo = T}
+df %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+```
+
+<br>
+
+###### <FONT color='#000033'><FONT size =3> 2.1.2 Analyse exploratoire des données (EDA) pour comprendre la distribution des classes, la longueur des entrées de texte et tout autre modèle </FONT> </FONT> 
+
+
+```{r, echo = T}
+# Analyse de la distribution des classes
+class_distribution <- table(df$Emotion)
+class_distribution
+```
+
+
+```{r, echo = T}
+df$TextLength <- nchar(df$Comment)
+
+df %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+
+```
+
+```{r, echo = T}
+# Distribution des classes
+# ggplot(df, aes(x=Emotion,fill = Emotion)) +
+#   geom_bar() +
+#   scale_fill_manual(values=c("fear"="blue", "anger"="red", "joy"="green")) +
+#   xlab("Emotion") +
+#   ylab("Fréquence") +
+#   ggtitle("Distribution des émotions")
+```
+
+```{r, echo = T}
+# Distribution de la longueur des textes
+# ggplot(df, aes(x=TextLength,fill=Emotion)) +
+#   geom_histogram(binwidth = 8, position = "stack") +
+#   scale_fill_manual(values=c("fear"="blue", "anger"="red", "joy"="green")) +
+#   xlab("Longueur du texte") +
+#   ylab("Fréquence") +
+#   ggtitle("Répartition des émotions par longueur de texte")
+```
+<hr>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 2.2 Prétraitement des données </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 2.2.1 Nettoyage les données textuelles en supprimant les caractères spéciaux, les chiffres et les mots vides </FONT></FONT>
+
+<br>
+
+```{r, echo = T,cache = T}
+# Fonction pour nettoyer un texte
+clean_text <- function(text) {
+  text_corrige <- tolower(text)                                       # Convertir en minuscules
+  text_corrige  <- removePunctuation(text_corrige )                   # Supprimer la ponctuation
+  text_corrige  <- removeNumbers(text_corrige )                       # Supprimer les chiffres
+  text_corrige  <- removeWords(text_corrige , stopwords("english"))   # Supprimer les mots vides
+  text_corrige  <- stripWhitespace(text_corrige )                     # Supprimer les espaces superflus
+  return(text_corrige)
+}
+
+# Application de la fonction de nettoyage
+df$Comment <- sapply(df$Comment, clean_text)
+
+sample_df <- df %>% sample_n(100)  # Changer 100 par le nombre de lignes que vous voulez afficher
+
+# Utilisez kable pour afficher cet échantillon
+sample_df %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>%
+  scroll_box(height = "250px")
+```
+
+Appliquez tokenization , stemming , or lemmatization
+
+```{r, echo = T, cache = T}
+df$Comment<- sapply(df$Comment,function(phrase)
+{
+  tokenize_word_stems(phrase,language = "english")
+})
+sample_df <- df %>% sample_n(100)  # Changer 100 par le nombre de lignes que vous voulez afficher
+
+# Utilisez kable pour afficher cet échantillon
+sample_df %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>%
+  scroll_box(height = "250px")
+
+```
+
+<br>
+
+```{r, echo = T}
+
+  # # Création d'un corpus
+  # corpus <- VCorpus(VectorSource(df$Comment))
+  
+  # # Création d'une matrice document-terme
+  # dtm <- DocumentTermMatrix(corpus)
+  
+  # # Calcul de TF-IDF
+  # tfidf <- weightTfIdf(dtm)
+  
+  # # Conversion en dataframe pour une analyse plus facile
+  # tfidf_matrix <- as.matrix(tfidf)
+  # tfidf_df <- as.data.frame(tfidf_matrix)
+
+  # sample_df <- tfidf_df %>% sample_n(100)  # Changer 100 par le nombre de lignes que vous voulez afficher
+
+  # # Affichage des résultats
+  # sample_df %>%
+  #   kbl(digits=3) %>%
+  #   kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>%
+  #   scroll_box(height = "250px")
+  ```
+
+
+
+
+
+
+
